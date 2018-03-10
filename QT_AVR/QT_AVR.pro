@@ -1,4 +1,5 @@
 TEMPLATE = subdirs
 
 SUBDIRS += \
-    test_ATMAGA8535
+    test_ATMAGA8535 \
+    TEST_MCP23S17
