@@ -157,13 +157,15 @@ int main(void)
   _delay_ms(100);
   for(;;) {
       PORTC ^=(0x01<<0);
-      SPI_Write(GPIOB,0b00000000);   // Write to MCP23S17 GPIOA
+      SPI_Write(GPIOA,0b00000000);   // Write to MCP23S17 GPIOA
+      SPI_Write(GPIOB,0b00000000);   // Write to MCP23S17 GPIOB
       _delay_ms(100);
-      SPI_Write(GPIOB,0b10000000);   // Write to MCP23S17 GPIOA
+      SPI_Write(GPIOB,0b10000000);   // Write to MCP23S17 GPIOB
       _delay_ms(100);
-      SPI_Write(GPIOB,0b11000000);   // Write to MCP23S17 GPIOA
+      SPI_Write(GPIOA,0b11111111);   // Write to MCP23S17 GPIOA
+      SPI_Write(GPIOB,0b11111111);   // Write to MCP23S17 GPIOB
       _delay_ms(100);
-      SPI_Write(GPIOB,0b01000000);   // Write to MCP23S17 GPIOA
+      SPI_Write(GPIOB,0b01000000);   // Write to MCP23S17 GPIOB
       _delay_ms(100);
   }
 
