@@ -22,7 +22,7 @@ void main(void)
      **/
     DDRA = 0b00000000;
     DDRB = 0b00000000;
-    DDRC = 0b00000001;
+    DDRC = 0b11111111;
     DDRD = 0b00000000;
 
     /* Data Register
@@ -34,7 +34,8 @@ void main(void)
     PORTC= 0xff;
     PORTD= 0xff;
     for(;;){
-        PORTC ^=(0x01<<0);
+        PORTC=PINA;
+        //PORTC ^=(0x01<<0);
         _delay_ms(100); //5Hz
     }
 }

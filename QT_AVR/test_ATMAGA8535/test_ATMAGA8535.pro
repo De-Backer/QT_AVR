@@ -31,12 +31,11 @@ QMAKE_EXTRA_TARGETS += eep hex flash
 
 # Add any library paths needed to build your project
 
-INCLUDEPATH =/opt/cross/avr/avr/include/
+INCLUDEPATH =/usr/avr/sys-root/include/
 
 # Source files you need for your project go here.
 
-SOURCES +=  main.c \
-    main.c
+SOURCES +=  main.c
 
 TARGET = $${NAME}.elf
 
