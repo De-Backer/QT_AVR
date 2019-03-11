@@ -10,11 +10,11 @@ CONFIG -= qt
 # Arguments : flash
 
 # AVR info
-DEVICE     = atmega8535
-DEFINES += __AVR_ATmega8535__
-CLOCK      = 8000000
+DEVICE     = atmega1284p
+DEFINES += __AVR_ATmega1284P__
+CLOCK      = 20000000
 PROGRAMMER = "dragon_isp -P usb 03eb:2107 -v"
-FUSES      = -U hfuse:w:0xC9:m -U lfuse:w:0x8E:m
+FUSES      =  -U lfuse:w:0xE7:m
 
 NAME = main
 
@@ -31,7 +31,7 @@ QMAKE_EXTRA_TARGETS += eep hex flash
 
 # Add any library paths needed to build your project
 
-INCLUDEPATH =/opt/cross/avr/avr/include/
+INCLUDEPATH =/usr/avr/sys-root/include/
 
 # Source files you need for your project go here.
 

@@ -6,7 +6,7 @@
 #ifdef __cplusplus
 extern "C"{
 #endif
-#define F_CPU 8000000	/* in Hz */
+#define F_CPU 20000000	/* in Hz */
 
 #include <avr/io.h>
 #include <util/delay.h>
@@ -34,14 +34,18 @@ extern "C"{
 #define GPPUB  0x0D
 #define GPIOA  0x12
 #define GPIOB  0x13
-
-void SPI_Write(unsigned char addr,unsigned char data)
+/*
+ * slave: A2=0,A1=0,A0=0 (0x07 - 0x00)
+ * addr : Register Address
+ * data : Register data
+*/
+void SPI_Write(unsigned char slave,unsigned char addr,unsigned char data)
 {
   // Activate the CS pin
   SPI_PORT &= ~(1<<SPI_CS);
 
   // Start MCP23S17 OpCode transmission
-  SPDR = SPI_SLAVE_ID | ((SPI_SLAVE_ADDR << 1) & 0x0E)| SPI_SLAVE_WRITE;
+  SPDR = SPI_SLAVE_ID | ((slave << 1) & 0x0E)| SPI_SLAVE_WRITE;
 
   // Wait for transmission complete
   while(!(SPSR & (1<<SPIF)));
@@ -107,13 +111,13 @@ int main(void)
    * 0 = ingang
    * 1 = uitgang
    **/
-    _delay_ms(100);
+    _delay_ms(1);
   DDRA = 0b00000000;
   DDRB = 0b00000000;
-  DDRC = 0b00000001;
+  DDRC = 0b00000000;
   DDRD = 0b00000000;
 
-  _delay_ms(100);
+  _delay_ms(1);
   /* Data Register
    * 0 = laag (uitgang) / tri-state (ingang)
    * 1 = hoog (uitgang) / pull up (ingang)
@@ -125,7 +129,7 @@ int main(void)
   PORTD= 0xff;
 
 
-  _delay_ms(100);
+  _delay_ms(1);
   /* init SPI */
 
   //Intialise the SPI-USI Communication
@@ -136,37 +140,45 @@ int main(void)
   //Enable Internal PullUP
   SPI_PORT |= (1<<SPI_MISO);
 
-  _delay_ms(100);
+  _delay_ms(1);
 
-  // Enable SPI, Master, set clock rate fck/64
-  SPCR = (1<<SPE)|(1<<MSTR)|(1<<SPR1);
+  // Enable SPI, Master, set clock rate fck/4
+  SPCR = (1<<SPE)|(1<<MSTR);//|(1<<SPR1);
+  // set clock rate fck/2
+  SPSR = (1<<SPI2X);
 
-  _delay_ms(100);
+  _delay_ms(1);
   // Initial the MCP23S17 SPI I/O Expander
-  SPI_Write(IOCONA,0x28);   // I/O Control Register: BANK=0, SEQOP=1, HAEN=1 (Enable Addressing)
-  _delay_ms(100);
-  SPI_Write(IODIRA,0x00);   // GPIOA As Output
-  _delay_ms(100);
-  SPI_Write(IODIRB,0x00);   // GPIOB As Output
-  _delay_ms(100);
-  SPI_Write(GPIOB,0x00);    // Reset Output on GPIOB
-  _delay_ms(100);
-  SPI_Write(GPIOA,0x00);    // Reset Output on GPIOA
+  for (unsigned char slave_addres = 0; slave_addres < 0x08; ++slave_addres) {
+      SPI_Write(slave_addres,IOCONA,0x28);   // I/O Control Register: BANK=0, SEQOP=1, HAEN=1 (Enable Addressing)
+      _delay_ms(1);
+      SPI_Write(slave_addres,IODIRA,0x00);   // GPIOA As Output
+      _delay_ms(1);
+      SPI_Write(slave_addres,IODIRB,0x00);   // GPIOB As Output
+      _delay_ms(1);
+      SPI_Write(slave_addres,GPIOB,0x00);    // Reset Output on GPIOB
+      _delay_ms(1);
+      SPI_Write(slave_addres,GPIOA,0x00);    // Reset Output on GPIOA
+      _delay_ms(1);
+  }
 
-
-  _delay_ms(100);
+  _delay_ms(1);
   for(;;) {
-      PORTC ^=(0x01<<0);
-      SPI_Write(GPIOA,0b00000000);   // Write to MCP23S17 GPIOA
-      SPI_Write(GPIOB,0b00000000);   // Write to MCP23S17 GPIOB
-      _delay_ms(100);
-      SPI_Write(GPIOB,0b10000000);   // Write to MCP23S17 GPIOB
-      _delay_ms(100);
-      SPI_Write(GPIOA,0b11111111);   // Write to MCP23S17 GPIOA
-      SPI_Write(GPIOB,0b11111111);   // Write to MCP23S17 GPIOB
-      _delay_ms(100);
-      SPI_Write(GPIOB,0b01000000);   // Write to MCP23S17 GPIOB
-      _delay_ms(100);
+      //PORTC ^=(0x01<<0);
+      for (unsigned char slave_addres = 0; slave_addres < 0x08; ++slave_addres) {
+          for (unsigned char var = 0; var < 255; ++var) {
+              SPI_Write(slave_addres,GPIOA,var);   // Write to MCP23S17 GPIOA
+              //_delay_ms(1);
+          }
+          for (unsigned char var = 0; var < 255; ++var) {
+              SPI_Write(slave_addres,GPIOB,var);   // Write to MCP23S17 GPIOA
+              //_delay_ms(1);
+          }
+          SPI_Write(slave_addres,GPIOA,0b00000000);   // Write to MCP23S17 GPIOA
+          SPI_Write(slave_addres,GPIOB,0b00000000);   // Write to MCP23S17 GPIOB
+          //_delay_ms(1);
+
+      }
   }
 
   return 0;
