@@ -1,15 +1,57 @@
+#if defined(__cplusplus)
+extern "C"{
+#endif
 /** Project: MCP23S17_test
  * Author:   De Backer Simon
  * info:     test SPI en MCP23S17
+ *
+ * static   variable is able to retain its value between different function calls.
+ * const    variable is marked read-only.
+ *
+ * inline   instructs the compiler to attempt to embed the function content
+ *          into the calling code instead of executing an actual call.
+ *
+ * voorstel com:
+ * start    >1ms geen data ----|--met timer
+ * data     <1ms data      ----|
+ * byte 1   functie
+ * byte 2   count 1-255 (beperkt door buffer in µc)
+ * byte 3   data 0-255
+ * ||||     data 0-255
+ * byte n   data 0-255
+ *
+ * start    >1ms geen data
+ *
+ * bv:
+ * zend_spi 0x0A
+ * 3 byte   0x03
+ * data     0x40
+ * data     0x20
+ * data     0x24
+ *
+ * reset    0x00
+ * 0 byte   0x00
+ * data     0x00
+ * data     0x00
+ * data     0x00 ->reset µc
 */
 
-#ifdef __cplusplus
-extern "C"{
-#endif
-#define F_CPU 20000000	/* in Hz */
+#include "RingBuffer.h"
+#include "sw_spi.h"
+#include <avr/sleep.h>
+/* debug edit tis */
+#define SVN 0x01 /* Software version number */
+#include "debug.h"
+/*  file number */
+FILENUM(1) //!! Unique file number !!
+
+
 
 #include <avr/io.h>
-#include <util/delay.h>
+#include <avr/interrupt.h> //USART
+#define F_CPU 20000000	/* in Hz */
+
+//#include <util/delay.h>
 
 #define SPI_PORT PORTB
 #define SPI_DDR  DDRB
@@ -65,12 +107,36 @@ extern "C"{
 #define OLATA    0x14 // A
 #define OLATB    0x15 // B
 
+
+
+/* ring buffer */
+static RingBuffer_t Buffer;
+static uint8_t      BufferData[255];
+
+static inline void SPI_Write(uint8_t slave,uint8_t addr,uint8_t data);
+
+ISR(USART0_RX_vect)
+{
+//    PORTB |=0x01;
+//    uint8_t ReceivedByte ;
+//    ReceivedByte = UDR0 ;
+    SPI_Write(0,GPIOA,UDR0);   // Write to MCP23S17 GPIOA
+//    if(RingBuffer_IsFull(&Buffer))
+//    {
+//        ASSERT(0,RingBuffer_GetCount(&Buffer));
+//    } else {
+//        RingBuffer_Insert(&Buffer, ReceivedByte);
+//        //UDR0 = ReceivedByte ;
+//    }
+//    PORTB &=~0x01;
+}
+
 /*
  * slave: A2=0,A1=0,A0=0 (0x07 - 0x00)
  * addr : Register Address
  * data : Register data
 */
-void SPI_Write(unsigned char slave,unsigned char addr,unsigned char data)
+static inline void SPI_Write(uint8_t slave,uint8_t addr,uint8_t data)
 {
   // Activate the CS pin
   SPI_PORT &= ~(1<<SPI_CS);
@@ -78,26 +144,32 @@ void SPI_Write(unsigned char slave,unsigned char addr,unsigned char data)
   // Start MCP23S17 OpCode transmission
   SPI_DATA_REGISTER = SPI_SLAVE_ID | ((slave << 1) & 0x0E)| SPI_SLAVE_WRITE;
 
+  sw_SPI_send_return_right_sck_up(SPI_SLAVE_ID | ((slave << 1) & 0x0E)| SPI_SLAVE_WRITE);
+
   // Wait for transmission complete
-  while(!(SPSR & (1<<SPIF)));
+  do {}while(!(SPSR & (1<<SPIF)));
 
   // Start MCP23S17 Register Address transmission
   SPI_DATA_REGISTER = addr;
 
+  sw_SPI_send_return_right_sck_up(addr);
+
   // Wait for transmission complete
-  while(!(SPSR & (1<<SPIF)));
+  do {}while(!(SPSR & (1<<SPIF)));
 
   // Start Data transmission
   SPI_DATA_REGISTER = data;
 
+  sw_SPI_send_return_right_sck_up(data);
+
   // Wait for transmission complete
-  while(!(SPSR & (1<<SPIF)));
+  do {}while(!(SPSR & (1<<SPIF)));
 
   // CS pin is not active
   SPI_PORT |= (1<<SPI_CS);
 }
 
-unsigned char SPI_Read(unsigned char addr)
+static inline uint8_t SPI_Read(uint8_t addr)
 {
   // Activate the CS pin
   SPI_PORT &= ~(1<<SPI_CS);
@@ -108,19 +180,11 @@ unsigned char SPI_Read(unsigned char addr)
   // Wait for transmission complete
   while(!(SPSR & (1<<SPIF)));
 
-#if MCP23S17_EMULATION
-  _delay_us(1);
-#endif
-
   // Start MCP23S17 Address transmission
   SPI_DATA_REGISTER = addr;
 
   // Wait for transmission complete
   while(!(SPSR & (1<<SPIF)));
-
-#if MCP23S17_EMULATION
-  _delay_us(1);
-#endif
 
   // Send Dummy transmission for reading the data
   SPI_DATA_REGISTER = 0x00;
@@ -142,25 +206,78 @@ int main(void)
    * 0 = ingang
    * 1 = uitgang
    **/
-  //  ////_delay_ms(1);
+  //  //////_delay_ms(1);
   DDRA = 0b00000000;
-  DDRB = 0b00000000;
+  DDRB = 0b00000011;//debug
   DDRC = 0b00000000;
   DDRD = 0b00000000;
 
-  //////_delay_ms(1);
+  ////////_delay_ms(1);
   /* Data Register
    * 0 = laag (uitgang) / tri-state (ingang)
    * 1 = hoog (uitgang) / pull up (ingang)
    **/
-  //////_delay_ms(100);
+  ////////_delay_ms(100);
   PORTA= 0xff;
   PORTB= 0xff;
   PORTC= 0xff;
   PORTD= 0xff;
 
 
-  //////_delay_ms(1);
+  PORTB &=~0x01;//debug
+  PORTB &=~0x02;//debug
+
+  //19.6  USART Initialization
+
+  //enabling the Transmitter or the Receiver depending on the usage
+  UCSR0B = (1<<RXEN0)|(1<<TXEN0);
+
+  //setting frame format
+  UCSR0C = (1<<UCSZ01) | (1<<UCSZ00);//8-bit, 1 stop bit, no parity
+
+  //setting the baud rate
+  /* 2.5 Mbps
+   * UBRR=0
+   * U2Xn = 1 */
+  UBRR0H = 0;
+  UBRR0L = 0;
+  UCSR0A |= (1<<U2X0);
+
+
+  /* 1.25 Mbps
+   + UBRR=0
+   + U2Xn = 0
+  UBRR0H = 0;
+  UBRR0L = 0;
+  UCSR0A &= ~(1<<U2X0);*/
+  /* 0.5 Mbps
+   * UBRR=4
+   * U2Xn = 1
+  UBRR0H = 0;
+  UBRR0L = 4;
+  UCSR0A |= (1<<U2X0);
+  */
+  /* 250 Kbps
+   * UBRR=4
+   * U2Xn = 0
+  UBRR0H = 0;
+  UBRR0L = 4;
+  UCSR0A &= ~(1<<U2X0);
+  */
+
+  //enabling the Receiver interrupt
+  UCSR0B |= (1<<RXCIE0);
+
+  /*init buffer*/
+
+  RingBuffer_InitBuffer(&Buffer, BufferData, sizeof(BufferData));
+
+  sei();
+
+  uint8_t data=0;
+
+
+  ////////_delay_ms(1);
   /* init SPI */
 
   //Intialise the SPI-USI Communication
@@ -171,7 +288,7 @@ int main(void)
   //Enable Internal PullUP
   SPI_PORT |= (1<<SPI_MISO);
 
-  //////_delay_ms(1);
+  ////////_delay_ms(1);
 
 /*  set clock rate
  * fck/x
@@ -187,18 +304,18 @@ int main(void)
  * 128  0       1       1
 */
   // Enable SPI, Master, set clock rate fck/64
-  SPCR = (1<<SPE)|(1<<MSTR)|(1<<SPR1)|(1<<SPR0);
+  //SPCR = (1<<SPE)|(1<<MSTR)|(1<<SPR1)|(1<<SPR0);
 
   // Enable SPI, Master, set clock rate fck/4
   //SPCR = (1<<SPE)|(1<<MSTR);
 
   // set clock rate fck/2
-  //SPCR = (1<<SPE)|(1<<MSTR);
-  //SPSR = (1<<SPI2X);
+  SPCR = (1<<SPE)|(1<<MSTR);
+  SPSR = (1<<SPI2X);
 
-  //////_delay_ms(1);
+  ////////_delay_ms(1);
   // Initial the MCP23S17 SPI I/O Expander
-  for (unsigned char slave_addres = 0; slave_addres < 0x08; ++slave_addres) {
+  for (uint8_t slave_addres = 0; slave_addres < 0x08; ++slave_addres) {
       SPI_Write(slave_addres,IOCONA,0x28);   /* I/O Control Register:
                                               * BANK=0, (Registers Definition)
                                               * MIRROR=0, (INT pins are not connected)
@@ -217,41 +334,139 @@ int main(void)
                                               * ODR=0, (Configures the INT pin:  Active driver output)
                                               * INTPOL=0, (polarity of the INT output pin:  Active-low)
                                               * Unimplemented=0 */
-      //////_delay_ms(1);
+      ////////_delay_ms(1);
       SPI_Write(slave_addres,IODIRA,0x00);   // GPIOA As Output
-      //////_delay_ms(1);
+      ////////_delay_ms(1);
       SPI_Write(slave_addres,IODIRB,0x00);   // GPIOB As Output
-      //////_delay_ms(1);
+      ////////_delay_ms(1);
       SPI_Write(slave_addres,GPIOB,0x00);    // Reset Output on GPIOB
-      //////_delay_ms(1);
+      ////////_delay_ms(1);
       SPI_Write(slave_addres,GPIOA,0x00);    // Reset Output on GPIOA
-      //////_delay_ms(1);
+      ////////_delay_ms(1);
   }
 
-  //////_delay_ms(1);
+  ////////_delay_ms(1);
+
+  uint8_t t_cont=1;
+
+
   for(;;) {
+//      data=~data;
+//      t_cont=RingBuffer_GetCount(&Buffer);
+//      //SPI_Write(3,GPIOA,data);   // Write to MCP23S17 GPIOA
+//      if(t_cont>16)
+//      {
+//          PORTB |=0x02;//debug
+//          uint8_t Data = RingBuffer_Remove(&Buffer);//01 slave_addres
+//          //UDR0=Data;
 
-      // Enable SPI, Master, set clock rate fck/64
-      //SPCR = (1<<SPE)|(1<<MSTR)|(1<<SPR1);
+//          SPI_Write(0,GPIOA,Data);   // Write to MCP23S17 GPIOA
+//          //SPI_Write(slave_addres,addr,data);   // Write to MCP23S17 GPIOA
+//          PORTB &=~0x02;//debug
+//          PORTB |=0x02;//debug
+//          Data = RingBuffer_Remove(&Buffer);//01 slave_addres
+//          //UDR0=Data;
 
-      //SPCR = 0x00;
-      // set clock rate fck/2
-      //SPCR = (1<<SPE)|(1<<MSTR);
-      //SPSR = (1<<SPI2X);
+//          SPI_Write(0,GPIOB,Data);   // Write to MCP23S17 GPIOA
+//          //SPI_Write(slave_addres,addr,data);   // Write to MCP23S17 GPIOA
+//          PORTB &=~0x02;//debug
 
-      //PORTC ^=(0x01<<0);
-      for (unsigned char slave_addres = 0; slave_addres < 0x08; ++slave_addres) {
-          for (unsigned char var = 0; var < 255; ++var) {
+//          PORTB |=0x02;//debug
+//          Data = RingBuffer_Remove(&Buffer);//01 slave_addres
+//          SPI_Write(1,GPIOA,Data);   // Write to MCP23S17 GPIOA
+//          //SPI_Write(slave_addres,addr,data);   // Write to MCP23S17 GPIOA
+//          PORTB &=~0x02;//debug
+//          PORTB |=0x02;//debug
+//          Data = RingBuffer_Remove(&Buffer);//01 slave_addres
+//          SPI_Write(1,GPIOB,Data);   // Write to MCP23S17 GPIOA
+//          //SPI_Write(slave_addres,addr,data);   // Write to MCP23S17 GPIOA
+//          PORTB &=~0x02;//debug
+
+//          PORTB |=0x02;//debug
+//          Data = RingBuffer_Remove(&Buffer);//01 slave_addres
+//          SPI_Write(2,GPIOA,Data);   // Write to MCP23S17 GPIOA
+//          //SPI_Write(slave_addres,addr,data);   // Write to MCP23S17 GPIOA
+//          PORTB &=~0x02;//debug
+//          PORTB |=0x02;//debug
+//          Data = RingBuffer_Remove(&Buffer);//01 slave_addres
+//          SPI_Write(2,GPIOB,Data);   // Write to MCP23S17 GPIOA
+//          //SPI_Write(slave_addres,addr,data);   // Write to MCP23S17 GPIOA
+//          PORTB &=~0x02;//debug
+
+//          PORTB |=0x02;//debug
+//          Data = RingBuffer_Remove(&Buffer);//01 slave_addres
+//          SPI_Write(3,GPIOA,Data);   // Write to MCP23S17 GPIOA
+//          //SPI_Write(slave_addres,addr,data);   // Write to MCP23S17 GPIOA
+//          PORTB &=~0x02;//debug
+//          PORTB |=0x02;//debug
+//          Data = RingBuffer_Remove(&Buffer);//01 slave_addres
+//          SPI_Write(3,GPIOB,Data);   // Write to MCP23S17 GPIOA
+//          //SPI_Write(slave_addres,addr,data);   // Write to MCP23S17 GPIOA
+//          PORTB &=~0x02;//debug
+
+//          PORTB |=0x02;//debug
+//          Data = RingBuffer_Remove(&Buffer);//01 slave_addres
+//          SPI_Write(4,GPIOA,Data);   // Write to MCP23S17 GPIOA
+//          //SPI_Write(slave_addres,addr,data);   // Write to MCP23S17 GPIOA
+//          PORTB &=~0x02;//debug
+//          PORTB |=0x02;//debug
+//          Data = RingBuffer_Remove(&Buffer);//01 slave_addres
+//          SPI_Write(4,GPIOB,Data);   // Write to MCP23S17 GPIOA
+//          //SPI_Write(slave_addres,addr,data);   // Write to MCP23S17 GPIOA
+//          PORTB &=~0x02;//debug
+
+//          PORTB |=0x02;//debug
+//          Data = RingBuffer_Remove(&Buffer);//01 slave_addres
+//          SPI_Write(5,GPIOA,Data);   // Write to MCP23S17 GPIOA
+//          //SPI_Write(slave_addres,addr,data);   // Write to MCP23S17 GPIOA
+//          PORTB &=~0x02;//debug
+//          PORTB |=0x02;//debug
+//          Data = RingBuffer_Remove(&Buffer);//01 slave_addres
+//          SPI_Write(5,GPIOB,Data);   // Write to MCP23S17 GPIOA
+//          //SPI_Write(slave_addres,addr,data);   // Write to MCP23S17 GPIOA
+//          PORTB &=~0x02;//debug
+
+//          PORTB |=0x02;//debug
+//          Data = RingBuffer_Remove(&Buffer);//01 slave_addres
+//          SPI_Write(6,GPIOA,Data);   // Write to MCP23S17 GPIOA
+//          //SPI_Write(slave_addres,addr,data);   // Write to MCP23S17 GPIOA
+//          PORTB &=~0x02;//debug
+//          PORTB |=0x02;//debug
+//          Data = RingBuffer_Remove(&Buffer);//01 slave_addres
+//          SPI_Write(6,GPIOB,Data);   // Write to MCP23S17 GPIOA
+//          //SPI_Write(slave_addres,addr,data);   // Write to MCP23S17 GPIOA
+//          PORTB &=~0x02;//debug
+
+//          PORTB |=0x02;//debug
+//          Data = RingBuffer_Remove(&Buffer);//01 slave_addres
+//          SPI_Write(7,GPIOA,Data);   // Write to MCP23S17 GPIOA
+//          //SPI_Write(slave_addres,addr,data);   // Write to MCP23S17 GPIOA
+//          PORTB &=~0x02;//debug
+//          PORTB |=0x02;//debug
+//          Data = RingBuffer_Remove(&Buffer);//01 slave_addres
+//          SPI_Write(7,GPIOB,Data);   // Write to MCP23S17 GPIOA
+//          //SPI_Write(slave_addres,addr,data);   // Write to MCP23S17 GPIOA
+//          PORTB &=~0x02;//debug
+//      } else {
+//          sleep_enable();
+//          sei();
+//          sleep_cpu();
+//          sleep_disable();
+//      }
+      //SPI_Write(3,GPIOA,t_cont);
+      /*
+      for (uint8_t slave_addres = 0; slave_addres < 0x08; ++slave_addres) {
+          for (uint8_t var = 0; var < 255; ++var) {
               SPI_Write(slave_addres,GPIOA,var);   // Write to MCP23S17 GPIOA
-              //_delay_ms(1);
+              ////_delay_ms(1);
           }
-          for (unsigned char var = 0; var < 255; ++var) {
+          for (uint8_t var = 0; var < 255; ++var) {
               SPI_Write(slave_addres,GPIOB,var);   // Write to MCP23S17 GPIOA
-              _delay_ms(1);
+              //_delay_ms(1);
           }
           SPI_Write(slave_addres,GPIOA,0b00000000);   // Write to MCP23S17 GPIOA
           SPI_Write(slave_addres,GPIOB,0b00000000);   // Write to MCP23S17 GPIOB
-          //_delay_ms(1);
+          ////_delay_ms(1);
 
       }
 
@@ -265,56 +480,59 @@ int main(void)
 
       for (int slave_addres = 0; slave_addres < 0x08; ++slave_addres) {
           SPI_Write(slave_addres,GPIOB,0b00000001);
-          _delay_ms(100);
+          //_delay_ms(100);
           SPI_Write(slave_addres,GPIOB,0b00000011);
-          _delay_ms(100);
+          //_delay_ms(100);
           SPI_Write(slave_addres,GPIOB,0b00000111);
-          _delay_ms(100);
+          //_delay_ms(100);
           SPI_Write(slave_addres,GPIOB,0b00001110);
-          _delay_ms(100);
+          //_delay_ms(100);
           SPI_Write(slave_addres,GPIOB,0b00011100);
-          _delay_ms(100);
+          //_delay_ms(100);
           SPI_Write(slave_addres,GPIOB,0b00111000);
-          _delay_ms(100);
+          //_delay_ms(100);
           SPI_Write(slave_addres,GPIOB,0b01110000);
-          _delay_ms(100);
+          //_delay_ms(100);
           SPI_Write(slave_addres,GPIOB,0b11100000);
-          _delay_ms(100);
+          //_delay_ms(100);
           SPI_Write(slave_addres,GPIOB,0b11000000);
-          _delay_ms(100);
+          //_delay_ms(100);
           SPI_Write(slave_addres,GPIOB,0b10000000);
-          _delay_ms(100);
+          //_delay_ms(100);
           SPI_Write(slave_addres,GPIOB,0b00000000);
-          _delay_ms(100);
+          //_delay_ms(100);
       }
       for (int slave_addres = 0x07; slave_addres >= 0x00; --slave_addres) {
           SPI_Write(slave_addres,GPIOA,0b00000001);
-          _delay_ms(100);
+          //_delay_ms(100);
           SPI_Write(slave_addres,GPIOA,0b00000011);
-          _delay_ms(100);
+          //_delay_ms(100);
           SPI_Write(slave_addres,GPIOA,0b00000111);
-          _delay_ms(100);
+          //_delay_ms(100);
           SPI_Write(slave_addres,GPIOA,0b00001110);
-          _delay_ms(100);
+          //_delay_ms(100);
           SPI_Write(slave_addres,GPIOA,0b00011100);
-          _delay_ms(100);
+          //_delay_ms(100);
           SPI_Write(slave_addres,GPIOA,0b00111000);
-          _delay_ms(100);
+          //_delay_ms(100);
           SPI_Write(slave_addres,GPIOA,0b01110000);
-          _delay_ms(100);
+          //_delay_ms(100);
           SPI_Write(slave_addres,GPIOA,0b11100000);
-          _delay_ms(100);
+          //_delay_ms(100);
           SPI_Write(slave_addres,GPIOA,0b11000000);
-          _delay_ms(100);
+          //_delay_ms(100);
           SPI_Write(slave_addres,GPIOA,0b10000000);
-          _delay_ms(100);
+          //_delay_ms(100);
           SPI_Write(slave_addres,GPIOA,0b00000000);
-          _delay_ms(100);
+          //_delay_ms(100);
       }
+      */
   }
 
   return 0;
 }
+
+
 
 #ifdef __cplusplus
 } // extern "C"
