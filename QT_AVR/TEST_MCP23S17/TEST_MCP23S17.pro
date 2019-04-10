@@ -21,7 +21,7 @@ NAME = main
 QMAKE_CC = avr-gcc
 QMAKE_CXX = avr-g++
 QMAKE_LINK = avr-g++
-QMAKE_CFLAGS = -Wall -Os -Iusbdrv -mmcu=$${DEVICE}
+QMAKE_CFLAGS = -Wall -Os -Iusbdrv -mmcu=$${DEVICE}  -save-temps
 
 # Customize the -mmcu flag
 
@@ -31,7 +31,8 @@ QMAKE_EXTRA_TARGETS += eep hex flash
 
 # Add any library paths needed to build your project
 
-INCLUDEPATH =/usr/avr/sys-root/include/
+INCLUDEPATH +=/usr/avr/sys-root/include/
+INCLUDEPATH +=../include/
 
 # Source files you need for your project go here.
 
@@ -73,3 +74,8 @@ flash.commands = avrdude -p $${DEVICE} -c $${PROGRAMMER}
 flash.commands += -U flash:w:$${NAME}.hex
 
 flash.depends = $${NAME}.hex
+
+HEADERS += \
+    ../include/RingBuffer.h\
+    ../include/debug.h \
+    ../include/sw_spi.h
