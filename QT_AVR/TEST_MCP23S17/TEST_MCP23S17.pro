@@ -77,5 +77,4 @@ flash.depends = $${NAME}.hex
 
 HEADERS += \
     ../include/RingBuffer.h\
-    ../include/debug.h \
-    ../include/sw_spi.h
+    ../include/debug.h

@@ -37,7 +37,6 @@ extern "C"{
 */
 
 #include "RingBuffer.h"
-#include "sw_spi.h"
 #include <avr/sleep.h>
 /* debug edit tis */
 #define SVN 0x01 /* Software version number */
@@ -61,6 +60,8 @@ FILENUM(1) //!! Unique file number !!
 #define SPI_MISO 6      // MISO <> MISO µc
 #define SPI_IRQ  2      // HIGH to LOW INT2 interrupt
 #define SPI_DATA_REGISTER SPDR // SPI DATA REGISTER van de µc
+
+//#define fastspi
 
 // MCP23S17 SPI Slave Device
 #define SPI_SLAVE_ID    0x40
@@ -144,26 +145,66 @@ static inline void SPI_Write(uint8_t slave,uint8_t addr,uint8_t data)
   // Start MCP23S17 OpCode transmission
   SPI_DATA_REGISTER = SPI_SLAVE_ID | ((slave << 1) & 0x0E)| SPI_SLAVE_WRITE;
 
-  sw_SPI_send_return_right_sck_up(SPI_SLAVE_ID | ((slave << 1) & 0x0E)| SPI_SLAVE_WRITE);
-
   // Wait for transmission complete
+#ifdef fastspi
+  asm volatile (
+              "rjmp .+0 ;2 \n\t"
+              "rjmp .+0 ;2 \n\t"
+              "rjmp .+0 ;2 \n\t"
+              "rjmp .+0 ;2 \n\t"
+              "rjmp .+0 ;2 \n\t"
+              "rjmp .+0 ;2 \n\t"
+              "rjmp .+0 ;2 \n\t"
+              "rjmp .+0 ;2 \n\t"
+              "nop      ;1 \n\t"
+              );
+#else
+  asm volatile (";test");
+  //do {PORTB ^=0x01;}while(!(SPSR & (1<<SPIF)));
   do {}while(!(SPSR & (1<<SPIF)));
+#endif
 
   // Start MCP23S17 Register Address transmission
   SPI_DATA_REGISTER = addr;
 
-  sw_SPI_send_return_right_sck_up(addr);
-
   // Wait for transmission complete
+#ifdef fastspi
+  asm volatile (
+              "rjmp .+0 ;2 \n\t"
+              "rjmp .+0 ;2 \n\t"
+              "rjmp .+0 ;2 \n\t"
+              "rjmp .+0 ;2 \n\t"
+              "rjmp .+0 ;2 \n\t"
+              "rjmp .+0 ;2 \n\t"
+              "rjmp .+0 ;2 \n\t"
+              "rjmp .+0 ;2 \n\t"
+              "nop      ;1 \n\t"
+              );
+#else
+  //do {PORTB ^=0x01;}while(!(SPSR & (1<<SPIF)));
   do {}while(!(SPSR & (1<<SPIF)));
+#endif
 
   // Start Data transmission
   SPI_DATA_REGISTER = data;
 
-  sw_SPI_send_return_right_sck_up(data);
-
   // Wait for transmission complete
+#ifdef fastspi
+  asm volatile (
+              "rjmp .+0 ;2 \n\t"
+              "rjmp .+0 ;2 \n\t"
+              "rjmp .+0 ;2 \n\t"
+              "rjmp .+0 ;2 \n\t"
+              "rjmp .+0 ;2 \n\t"
+              "rjmp .+0 ;2 \n\t"
+              "rjmp .+0 ;2 \n\t"
+              "rjmp .+0 ;2 \n\t"
+              "nop      ;1 \n\t"
+              );
+#else
+  //do {PORTB ^=0x01;}while(!(SPSR & (1<<SPIF)));
   do {}while(!(SPSR & (1<<SPIF)));
+#endif
 
   // CS pin is not active
   SPI_PORT |= (1<<SPI_CS);
@@ -200,6 +241,12 @@ static inline uint8_t SPI_Read(uint8_t addr)
 
 int main(void)
 {
+    asm volatile (
+            ";loop test \n\t"
+            ".rep 10; \n\t"
+            "lsl r16; \n\t"
+            ".endr; \n\t"
+                  );
   /* init */
 
   /* Data Direction Register
